@@ -1,0 +1,18 @@
+# Tor configuration for Railway deployment
+SocksPort 0.0.0.0:9050
+SocksPolicy accept 127.0.0.1
+
+# Control port - localhost only (safe inside single container)
+ControlPort 127.0.0.1:9051
+CookieAuthentication 1
+CookieAuthFile /var/lib/tor/control_auth_cookie
+
+# IP rotation - 10 seconds is Tor's minimum
+MaxCircuitDirtiness 10
+NewCircuitPeriod 10
+UseEntryGuards 0
+CircuitBuildTimeout 10
+LearnCircuitBuildTimeout 0
+
+# Logging
+Log notice stdout
