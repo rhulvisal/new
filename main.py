@@ -18,9 +18,9 @@ from fastapi.responses import StreamingResponse
 import asyncio
 
 
-TOR_PROXY_URL = "socks5h://127.0.0.1:9050"
-SUPABASE_DB_URL = "postgresql://postgres.ihkpvrrotqvdmassywyz:Hogaya,.12**@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
-SUPABASE_TABLE = "fb_checks"
+TOR_PROXY_URL = os.getenv("TOR_PROXY_URL", "socks5h://127.0.0.1:9050")
+SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL", "")
+SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "fb_checks")
 
 HEADERS = {
     "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -192,7 +192,7 @@ def extract_dtsg(html: str) -> Optional[str]:
         match = re.search(pattern, html)
         if match:
             token = match.group(1)
-            if ':0:0' not in token and token.startswith('NAf'):
+            if token.startswith('NAf') and not token.endswith(':0:0') and ':' not in token:
                 token += ':0:0'
             return token
     return None
@@ -503,6 +503,18 @@ class FacebookNumberChecker:
             proxy_dict = {'http': TOR_PROXY_URL, 'https': TOR_PROXY_URL}
             self.session.proxies.update(proxy_dict)
 
+    def close(self):
+        try:
+            self.session.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def fetch_identify_page(self, max_retries: int = 3) -> bool:
         for attempt in range(max_retries):
             try:
@@ -624,6 +636,8 @@ def check_tor_availability() -> Tuple[bool, Optional[str]]:
 
 
 def save_to_supabase(results: List[Dict]):
+    conn = None
+    cur = None
     try:
         import psycopg2
         from psycopg2.extras import execute_values
@@ -648,19 +662,28 @@ def save_to_supabase(results: List[Dict]):
             )
             conn.commit()
 
-        cur.close()
-        conn.close()
         return True
     except Exception as e:
         print(f"[ERROR] Supabase save failed: {e}")
         return False
+    finally:
+        if cur:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def process_numbers_for_task(task_id: str, numbers: List[str]):
     try:
         for number in numbers:
-            checker = FacebookNumberChecker(use_tor=True)
-            result = checker.check_number(number)
+            with FacebookNumberChecker(use_tor=True) as checker:
+                result = checker.check_number(number)
 
             result_obj = {
                 "number": number,
